@@ -192,8 +192,13 @@ static void VS_CC casCreate(const VSMap * in, VSMap * out, void * userData, VSCo
         {
             const int m = vsapi->propNumElements(in, "planes");
 
-            for (int i = 0; i < 3; i++)
-                d->process[i] = (m <= 0);
+            if (m <= 0) {
+                for (int i = 0; i < 3; i++) {
+                    d->process[i] = true;
+                    if (i == 0 && d->vi->format->colorFamily != cmRGB)
+                        break;
+                }
+            }
 
             for (int i = 0; i < m; i++) {
                 const int n = int64ToIntS(vsapi->propGetInt(in, "planes", i, nullptr));
