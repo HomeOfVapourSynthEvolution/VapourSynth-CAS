@@ -188,6 +188,8 @@ static void VS_CC casCreate(const VSMap * in, VSMap * out, void * userData, VSCo
         }
 
         d->sharpness = static_cast<float>(vsapi->propGetFloat(in, "sharpness", 0, &err));
+        if (err)
+            d->sharpness = 0.5f;
 
         {
             const int m = vsapi->propNumElements(in, "planes");

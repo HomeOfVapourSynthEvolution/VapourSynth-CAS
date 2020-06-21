@@ -7,7 +7,7 @@ Description
 Usage
 =====
 
-    cas.CAS(clip clip[, float sharpness=0.0, int planes, int opt=0])
+    cas.CAS(clip clip[, float sharpness=0.5, int planes, int opt=0])
 
 * clip: Clip to process. Any planar format with either integer sample type of 8-16 bit depth or float sample type of 32 bit depth is supported.
 
