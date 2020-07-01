@@ -1,6 +1,7 @@
 #pragma once
 
 #include <any>
+#include <type_traits>
 
 #include <VapourSynth.h>
 #include <VSHelper.h>
