@@ -177,14 +177,14 @@ static void VS_CC casCreate(const VSMap * in, VSMap * out, void * userData, VSCo
         if (!isConstantFormat(d->vi) ||
             (d->vi->format->sampleType == stInteger && d->vi->format->bitsPerSample > 16) ||
             (d->vi->format->sampleType == stFloat && d->vi->format->bitsPerSample != 32))
-            throw "only constant format 8-16 bit integer and 32 bit float input supported"sv;
+            throw "only constant format 8-16 bit integer and 32 bit float input supported";
 
         for (int plane = 0; plane < d->vi->format->numPlanes; plane++) {
             if (d->vi->width >> (plane ? d->vi->format->subSamplingW : 0) < 3)
-                throw "every plane's width must be greater than or equal to 3"sv;
+                throw "every plane's width must be greater than or equal to 3";
 
             if (d->vi->height >> (plane ? d->vi->format->subSamplingH : 0) < 3)
-                throw "every plane's height must be greater than or equal to 3"sv;
+                throw "every plane's height must be greater than or equal to 3";
         }
 
         d->sharpness = static_cast<float>(vsapi->propGetFloat(in, "sharpness", 0, &err));
@@ -206,10 +206,10 @@ static void VS_CC casCreate(const VSMap * in, VSMap * out, void * userData, VSCo
                 const int n = int64ToIntS(vsapi->propGetInt(in, "planes", i, nullptr));
 
                 if (n < 0 || n >= d->vi->format->numPlanes)
-                    throw "plane index out of range"sv;
+                    throw "plane index out of range";
 
                 if (d->process[n])
-                    throw "plane specified twice"sv;
+                    throw "plane specified twice";
 
                 d->process[n] = true;
             }
@@ -218,10 +218,10 @@ static void VS_CC casCreate(const VSMap * in, VSMap * out, void * userData, VSCo
         const int opt = int64ToIntS(vsapi->propGetInt(in, "opt", 0, &err));
 
         if (d->sharpness < 0.0f || d->sharpness > 1.0f)
-            throw "sharpness must be between 0.0 and 1.0 (inclusive)"sv;
+            throw "sharpness must be between 0.0 and 1.0 (inclusive)";
 
         if (opt < 0 || opt > 4)
-            throw "opt must be 0, 1, 2, 3, or 4"sv;
+            throw "opt must be 0, 1, 2, 3, or 4";
 
         {
             if (d->vi->format->bytesPerSample == 1)
@@ -261,14 +261,14 @@ static void VS_CC casCreate(const VSMap * in, VSMap * out, void * userData, VSCo
         auto lerp = [](const float a, const float b, const float t) noexcept { return a + (b - a) * t; };
         d->sharpness = -1.0f / lerp(16.0f, 5.0f, d->sharpness);
 
-        if (d->vi->format->sampleType == stInteger)
+        if (d->vi->format->sampleType == stInteger) {
             d->limit = (1 << (d->vi->format->bitsPerSample + 1)) - 1;
-        else
+            d->peak = (1 << d->vi->format->bitsPerSample) - 1;
+        } else {
             d->limit = 2.0f;
-
-        d->peak = (1 << d->vi->format->bitsPerSample) - 1;
-    } catch (const std::string_view & error) {
-        vsapi->setError(out, ("CAS: "s + error.data()).c_str());
+        }
+    } catch (const char * error) {
+        vsapi->setError(out, ("CAS: "s + error).c_str());
         vsapi->freeNode(d->node);
         return;
     }
