@@ -10,7 +10,7 @@ void filter_avx2(const VSFrameRef * src, VSFrameRef * dst, const CASData * const
             return Vec8i().load_8us(srcp);
     };
 
-    auto store_8u = [=](const Vec8f __result, void * dstp) noexcept {
+    auto store_8u = [&](const Vec8f __result, void * dstp) noexcept {
         const Vec8i _result = truncatei(__result + 0.5f);
 
         if constexpr (std::is_same_v<pixel_t, uint8_t>) {
@@ -26,7 +26,7 @@ void filter_avx2(const VSFrameRef * src, VSFrameRef * dst, const CASData * const
 
     const var_t limit = std::any_cast<std::conditional_t<std::is_integral_v<pixel_t>, int, float>>(data->limit);
 
-    auto filtering = [=](const var_t a, const var_t b, const var_t c, const var_t d, const var_t e, const var_t f, const var_t g, const var_t h, const var_t i,
+    auto filtering = [&](const var_t a, const var_t b, const var_t c, const var_t d, const var_t e, const var_t f, const var_t g, const var_t h, const var_t i,
                          const Vec8f chromaOffset) noexcept {
         // Soft min and max.
         //  a b c             b

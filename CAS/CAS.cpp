@@ -42,7 +42,7 @@ static void filter_c(const VSFrameRef * src, VSFrameRef * dst, const CASData * c
 
     const var_t limit = std::any_cast<var_t>(data->limit);
 
-    auto filtering = [=](const var_t a, const var_t b, const var_t c, const var_t d, const var_t e, const var_t f, const var_t g, const var_t h, const var_t i,
+    auto filtering = [&](const var_t a, const var_t b, const var_t c, const var_t d, const var_t e, const var_t f, const var_t g, const var_t h, const var_t i,
                          const float chromaOffset) noexcept {
         // Soft min and max.
         //  a b c             b
