@@ -1,7 +1,7 @@
 project('CAS', 'cpp',
   default_options: ['buildtype=release', 'b_ndebug=if-release', 'cpp_std=c++17'],
   meson_version: '>=0.48.0',
-  version: '1'
+  version: '2'
 )
 
 sources = [
@@ -14,7 +14,7 @@ vapoursynth_dep = dependency('vapoursynth').partial_dependency(compile_args: tru
 libs = []
 
 if host_machine.cpu_family().startswith('x86')
-  add_project_arguments('-DCAS_X86', '-mfpmath=sse', '-msse2', language: 'cpp')
+  add_project_arguments('-fno-math-errno', '-fno-trapping-math', '-DCAS_X86', '-mfpmath=sse', '-msse2', language: 'cpp')
 
   sources += [
     'CAS/CAS_SSE2.cpp',
@@ -49,7 +49,7 @@ if host_machine.cpu_family().startswith('x86')
 
   libs += static_library('avx512', 'CAS/CAS_AVX512.cpp',
     dependencies: vapoursynth_dep,
-    cpp_args: ['-mavx512f', '-mavx512bw', '-mavx512dq', '-mavx512vl', '-mfma'],
+    cpp_args: ['-mavx512f', '-mavx512vl', '-mavx512bw', '-mavx512dq', '-mfma'],
     gnu_symbol_visibility: 'hidden'
   )
 endif

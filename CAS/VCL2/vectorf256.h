@@ -1363,6 +1363,14 @@ static inline Vec8f approx_recipr(Vec8f const a) {
 #endif
 }
 
+// Newton-Raphson refined approximate reciprocal (23 bit precision)
+static inline Vec8f rcp_nr(Vec8f const a) {
+    Vec8f nr = _mm256_rcp_ps(a);
+    Vec8f muls = nr * nr * a;
+    Vec8f dbl = nr + nr;
+    return dbl - muls;
+}
+
 // approximate reciprocal squareroot (Faster than 1.f / sqrt(a). Relative accuracy better than 2^-11)
 static inline Vec8f approx_rsqrt(Vec8f const a) {
 // use more accurate version if available. (none of these will raise exceptions on zero)
