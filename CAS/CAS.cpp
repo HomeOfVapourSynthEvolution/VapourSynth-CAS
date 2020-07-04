@@ -181,10 +181,10 @@ static void VS_CC casCreate(const VSMap * in, VSMap * out, void * userData, VSCo
 
         for (int plane = 0; plane < d->vi->format->numPlanes; plane++) {
             if (d->vi->width >> (plane ? d->vi->format->subSamplingW : 0) < 3)
-                throw "every plane's width must be greater than or equal to 3";
+                throw "plane's width must be greater than or equal to 3";
 
             if (d->vi->height >> (plane ? d->vi->format->subSamplingH : 0) < 3)
-                throw "every plane's height must be greater than or equal to 3";
+                throw "plane's height must be greater than or equal to 3";
         }
 
         d->sharpness = static_cast<float>(vsapi->propGetFloat(in, "sharpness", 0, &err));

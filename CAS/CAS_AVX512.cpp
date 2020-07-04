@@ -3,42 +3,45 @@
 
 template<typename pixel_t>
 void filter_avx512(const VSFrameRef * src, VSFrameRef * dst, const CASData * const VS_RESTRICT data, const VSAPI * vsapi) noexcept {
-    auto load_16u = [](const void * srcp) noexcept {
+    using var_t = std::conditional_t<std::is_integral_v<pixel_t>, int, float>;
+    using vec_t = std::conditional_t<std::is_integral_v<pixel_t>, Vec16i, Vec16f>;
+
+    const vec_t limit = std::any_cast<var_t>(data->limit);
+
+    auto load = [](const pixel_t * srcp) noexcept {
         if constexpr (std::is_same_v<pixel_t, uint8_t>)
-            return Vec16i().load_16uc(srcp);
+            return vec_t().load_16uc(srcp);
+        else if constexpr (std::is_same_v<pixel_t, uint16_t>)
+            return vec_t().load_16us(srcp);
         else
-            return Vec16i().load_16us(srcp);
+            return vec_t().load(srcp);
     };
 
-    auto store_16u = [&](const Vec16f __result, void * dstp) noexcept {
-        const Vec16i _result = truncatei(__result + 0.5f);
-
+    auto store = [&](const Vec16f srcp, pixel_t * dstp) noexcept {
         if constexpr (std::is_same_v<pixel_t, uint8_t>) {
-            const auto result = compress_saturated_s2u(compress_saturated(_result, zero_si512()), zero_si512()).get_low().get_low();
+            const auto result = compress_saturated_s2u(compress_saturated(truncatei(srcp + 0.5f), zero_si512()), zero_si512()).get_low().get_low();
             result.store_nt(dstp);
-        } else {
-            const auto result = compress_saturated_s2u(_result, zero_si512()).get_low();
+        } else if constexpr (std::is_same_v<pixel_t, uint16_t>) {
+            const auto result = compress_saturated_s2u(truncatei(srcp + 0.5f), zero_si512()).get_low();
             min(result, data->peak).store_nt(dstp);
+        } else {
+            srcp.store_nt(dstp);
         }
     };
 
-    using var_t = std::conditional_t<std::is_integral_v<pixel_t>, Vec16i, Vec16f>;
-
-    const var_t limit = std::any_cast<std::conditional_t<std::is_integral_v<pixel_t>, int, float>>(data->limit);
-
-    auto filtering = [&](const var_t a, const var_t b, const var_t c, const var_t d, const var_t e, const var_t f, const var_t g, const var_t h, const var_t i,
+    auto filtering = [&](const vec_t a, const vec_t b, const vec_t c, const vec_t d, const vec_t e, const vec_t f, const vec_t g, const vec_t h, const vec_t i,
                          const Vec16f chromaOffset) noexcept {
         // Soft min and max.
         //  a b c             b
         //  d e f * 0.5  +  d e f * 0.5
         //  g h i             h
         // These are 2.0x bigger (factored out the extra multiply).
-        var_t mn = min(min(min(d, e), min(f, b)), h);
-        const var_t mn2 = min(min(min(mn, a), min(c, g)), i);
+        vec_t mn = min(min(min(d, e), min(f, b)), h);
+        const vec_t mn2 = min(min(min(mn, a), min(c, g)), i);
         mn += mn2;
 
-        var_t mx = max(max(max(d, e), max(f, b)), h);
-        const var_t mx2 = max(max(max(mx, a), max(c, g)), i);
+        vec_t mx = max(max(max(d, e), max(f, b)), h);
+        const vec_t mx2 = max(max(max(mx, a), max(c, g)), i);
         mx += mx2;
 
         if constexpr (std::is_floating_point_v<pixel_t>) {
@@ -77,128 +80,68 @@ void filter_avx512(const VSFrameRef * src, VSFrameRef * dst, const CASData * con
 
             const Vec16f chromaOffset = plane ? 1.0f : 0.0f;
 
-            const int regularPart = (width - 1) & ~(Vec16i().size() - 1);
+            const int regularPart = (width - 1) & ~(vec_t().size() - 1);
 
             for (int y = 0; y < height; y++) {
                 const pixel_t * above = srcp + (y == 0 ? stride : -stride);
                 const pixel_t * below = srcp + (y == height - 1 ? -stride : stride);
 
-                if constexpr (std::is_integral_v<pixel_t>) {
-                    {
-                        const Vec16i b = load_16u(above + 0);
-                        const Vec16i e = load_16u(srcp + 0);
-                        const Vec16i h = load_16u(below + 0);
+                {
+                    const vec_t b = load(above + 0);
+                    const vec_t e = load(srcp + 0);
+                    const vec_t h = load(below + 0);
 
-                        const Vec16i a = permute16<1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14>(b);
-                        const Vec16i d = permute16<1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14>(e);
-                        const Vec16i g = permute16<1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14>(h);
+                    const vec_t a = permute16<1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14>(b);
+                    const vec_t d = permute16<1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14>(e);
+                    const vec_t g = permute16<1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14>(h);
 
-                        Vec16i c, f, i;
-                        if (width > Vec16i().size()) {
-                            c = load_16u(above + 1);
-                            f = load_16u(srcp + 1);
-                            i = load_16u(below + 1);
-                        } else {
-                            c = permute16<1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 14>(b);
-                            f = permute16<1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 14>(e);
-                            i = permute16<1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 14>(h);
-                        }
-
-                        const Vec16f result = filtering(a, b, c,
-                                                        d, e, f,
-                                                        g, h, i,
-                                                        chromaOffset);
-
-                        store_16u(result, dstp + 0);
+                    vec_t c, f, i;
+                    if (width > vec_t().size()) {
+                        c = load(above + 1);
+                        f = load(srcp + 1);
+                        i = load(below + 1);
+                    } else {
+                        c = permute16<1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 14>(b);
+                        f = permute16<1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 14>(e);
+                        i = permute16<1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 14>(h);
                     }
 
-                    for (int x = Vec16i().size(); x < regularPart; x += Vec16i().size()) {
-                        const Vec16f result = filtering(load_16u(above + x - 1), load_16u(above + x), load_16u(above + x + 1),
-                                                        load_16u(srcp + x - 1), load_16u(srcp + x), load_16u(srcp + x + 1),
-                                                        load_16u(below + x - 1), load_16u(below + x), load_16u(below + x + 1),
-                                                        chromaOffset);
+                    const Vec16f result = filtering(a, b, c,
+                                                    d, e, f,
+                                                    g, h, i,
+                                                    chromaOffset);
 
-                        store_16u(result, dstp + x);
-                    }
+                    store(result, dstp + 0);
+                }
 
-                    if (regularPart >= Vec16i().size()) {
-                        const Vec16i a = load_16u(above + regularPart - 1);
-                        const Vec16i d = load_16u(srcp + regularPart - 1);
-                        const Vec16i g = load_16u(below + regularPart - 1);
+                for (int x = vec_t().size(); x < regularPart; x += vec_t().size()) {
+                    const Vec16f result = filtering(load(above + x - 1), load(above + x), load(above + x + 1),
+                                                    load(srcp + x - 1), load(srcp + x), load(srcp + x + 1),
+                                                    load(below + x - 1), load(below + x), load(below + x + 1),
+                                                    chromaOffset);
 
-                        const Vec16i b = load_16u(above + regularPart);
-                        const Vec16i e = load_16u(srcp + regularPart);
-                        const Vec16i h = load_16u(below + regularPart);
+                    store(result, dstp + x);
+                }
 
-                        const Vec16i c = permute16<1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 14>(b);
-                        const Vec16i f = permute16<1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 14>(e);
-                        const Vec16i i = permute16<1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 14>(h);
+                if (regularPart >= vec_t().size()) {
+                    const vec_t a = load(above + regularPart - 1);
+                    const vec_t d = load(srcp + regularPart - 1);
+                    const vec_t g = load(below + regularPart - 1);
 
-                        const Vec16f result = filtering(a, b, c,
-                                                        d, e, f,
-                                                        g, h, i,
-                                                        chromaOffset);
+                    const vec_t b = load(above + regularPart);
+                    const vec_t e = load(srcp + regularPart);
+                    const vec_t h = load(below + regularPart);
 
-                        store_16u(result, dstp + regularPart);
-                    }
-                } else {
-                    {
-                        const Vec16f b = Vec16f().load_a(above + 0);
-                        const Vec16f e = Vec16f().load_a(srcp + 0);
-                        const Vec16f h = Vec16f().load_a(below + 0);
+                    const vec_t c = permute16<1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 14>(b);
+                    const vec_t f = permute16<1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 14>(e);
+                    const vec_t i = permute16<1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 14>(h);
 
-                        const Vec16f a = permute16<1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14>(b);
-                        const Vec16f d = permute16<1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14>(e);
-                        const Vec16f g = permute16<1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14>(h);
+                    const Vec16f result = filtering(a, b, c,
+                                                    d, e, f,
+                                                    g, h, i,
+                                                    chromaOffset);
 
-                        Vec16f c, f, i;
-                        if (width > Vec16f().size()) {
-                            c = Vec16f().load(above + 1);
-                            f = Vec16f().load(srcp + 1);
-                            i = Vec16f().load(below + 1);
-                        } else {
-                            c = permute16<1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 14>(b);
-                            f = permute16<1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 14>(e);
-                            i = permute16<1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 14>(h);
-                        }
-
-                        const Vec16f result = filtering(a, b, c,
-                                                        d, e, f,
-                                                        g, h, i,
-                                                        chromaOffset);
-
-                        result.store_nt(dstp + 0);
-                    }
-
-                    for (int x = Vec16f().size(); x < regularPart; x += Vec16f().size()) {
-                        const Vec16f result = filtering(Vec16f().load(above + x - 1), Vec16f().load_a(above + x), Vec16f().load(above + x + 1),
-                                                        Vec16f().load(srcp + x - 1), Vec16f().load_a(srcp + x), Vec16f().load(srcp + x + 1),
-                                                        Vec16f().load(below + x - 1), Vec16f().load_a(below + x), Vec16f().load(below + x + 1),
-                                                        chromaOffset);
-
-                        result.store_nt(dstp + x);
-                    }
-
-                    if (regularPart >= Vec16f().size()) {
-                        const Vec16f a = Vec16f().load(above + regularPart - 1);
-                        const Vec16f d = Vec16f().load(srcp + regularPart - 1);
-                        const Vec16f g = Vec16f().load(below + regularPart - 1);
-
-                        const Vec16f b = Vec16f().load_a(above + regularPart);
-                        const Vec16f e = Vec16f().load_a(srcp + regularPart);
-                        const Vec16f h = Vec16f().load_a(below + regularPart);
-
-                        const Vec16f c = permute16<1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 14>(b);
-                        const Vec16f f = permute16<1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 14>(e);
-                        const Vec16f i = permute16<1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 14>(h);
-
-                        const Vec16f result = filtering(a, b, c,
-                                                        d, e, f,
-                                                        g, h, i,
-                                                        chromaOffset);
-
-                        result.store_nt(dstp + regularPart);
-                    }
+                    store(result, dstp + regularPart);
                 }
 
                 srcp += stride;
